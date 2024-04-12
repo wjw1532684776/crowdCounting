@@ -41,7 +41,7 @@ class MCNN(nn.Module):
             nn.Conv2d(48,24,3,padding=1),
             nn.ReLU(inplace=True),
             nn.Conv2d(24,12,3,padding=1),
-            nn.ReLU(inplace=False)
+            nn.ReLU(inplace=True)
         )
         
         self.fuse = nn.Sequential(nn.Conv2d(30, 1, 1, padding=0))
