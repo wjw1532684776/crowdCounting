@@ -46,7 +46,7 @@ if __name__ == '__main__':
     model = MCNN().to(device)
     checkpoint_path = 'checkpoints/checkpointA.pth'
     if os.path.exists(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
+        checkpoint = torch.load(checkpoint_path)
         model.load_state_dict(checkpoint['state_dict'])
     else:
         print(f"No checkpoint found at '{checkpoint_path}'")
