@@ -4,7 +4,7 @@ from torchvision import transforms
 import numpy as np
 import os
 from dataset import CrowdCountingDataset
-from model import MCNN
+from model import CSRNet
 
 def evaluate(model, dataloader, device):
     model.eval()  # 设置模型为评估模式
@@ -35,18 +35,21 @@ if __name__ == '__main__':
 
     # 加载测试数据集
     transform = transforms.Compose([
-        transforms.Resize((256, 256)),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
-    ])
+        transforms.Normalize(      
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )])
 
     test_data = CrowdCountingDataset('../../shanghaitech/part_A_test.json', transform=transform)
     test_dataloader = DataLoader(test_data, batch_size=1, shuffle=False)
 
     # 加载模型
-    model = MCNN().to(device)
+    model = CSRNet().to(device)
     checkpoint_path = 'checkpoints/checkpointA.pth'
     if os.path.exists(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
+        checkpoint = torch.load(checkpoint_path)
         model.load_state_dict(checkpoint['state_dict'])
     else:
         print(f"No checkpoint found at '{checkpoint_path}'")
