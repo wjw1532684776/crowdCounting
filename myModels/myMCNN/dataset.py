@@ -35,18 +35,18 @@ class CrowdCountingDataset(Dataset):
             original_size = density.shape[:2]  # 原始大小
             
             # 使用OpenCV缩放密度图
-            density = cv2.resize(density, (64, 64), interpolation=cv2.INTER_LINEAR)
+            density = cv2.resize(density, (64, 64), interpolation=cv2.INTER_NEAREST)
 
             # 调整密度图的值以保持总人数不变
             density *= (original_size[0] * original_size[1]) / (64*64)
 
-            density_min = density.min()
-            density_max = density.max()
-            density_normalized = (density - density_min) / (density_max - density_min)
-            density_normalized = density_normalized.round(4)
+            # density_min = density.min()
+            # density_max = density.max()
+            # density_normalized = (density - density_min) / (density_max - density_min)
+            # density_normalized = density_normalized.round(4)
 
             # 将numpy数组转换为torch张量
-            density = torch.from_numpy(density_normalized).float()
+            density = torch.from_numpy(density).float()
 
         return img, density
     

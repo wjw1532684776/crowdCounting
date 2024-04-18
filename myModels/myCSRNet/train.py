@@ -7,7 +7,7 @@ from torchvision import transforms
 from dataset import CrowdCountingDataset
 import os
 
-def train_model(model, dataloader, criterion, optimizer, device, epoch, epochs):
+def train_model(model, dataloader, criterion, optimizer, device):
     model.train()
     running_loss = 0.0
     for img, density in dataloader:
@@ -17,7 +17,7 @@ def train_model(model, dataloader, criterion, optimizer, device, epoch, epochs):
         optimizer.zero_grad()
         
         output = model(img)
-        loss = criterion(output, density.unsqueeze(1))  # 添加一个通道维度
+        loss = criterion(output, density.unsqueeze(1))
         
         loss.backward()
         optimizer.step()
@@ -25,33 +25,46 @@ def train_model(model, dataloader, criterion, optimizer, device, epoch, epochs):
         running_loss += loss.item()
     
     epoch_loss = running_loss / len(dataloader)
-    print(f"Epoch[{epoch+1}/{epochs}], Loss: {epoch_loss:.4f}")
+    return epoch_loss
 
-def validate_model(model, dataloader, criterion, device, epoch, epochs):
+def validate_model(model, dataloader, device):
     model.eval()
-    total_loss = 0.0
-    with torch.no_grad():
+
+    mae, mse = 0.0, 0.0
+    with torch.no_grad(): 
         for img, density in dataloader:
             img = img.to(device)
             density = density.to(device)
-            
+
             output = model(img)
-            loss = criterion(output, density.unsqueeze(1)).item()
-            
-            total_loss += loss
-            
-        avg_loss = total_loss / len(dataloader)
-        print(f"Epoch[{epoch+1}/{epochs}], Validation Loss:{avg_loss:.4f}")
-    return avg_loss
+            ground_truth_count = torch.sum(density).item()
+            predicted_count = torch.sum(output).item()
+
+            mae += abs(predicted_count - ground_truth_count)
+            mse += ((predicted_count - ground_truth_count) ** 2)
+
+    mae /= len(dataloader.dataset)
+    mse /= len(dataloader.dataset)
+    mse = np.sqrt(mse)
+    return mae, mse
 
 if __name__ == '__main__':
     
+    # 读取命令行参数
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-t', '--train_json', type=str, required=True, help='path to train JSON')
+    parser.add_argument('-v', '--val_json', type=str, required=True, help='path to validation JSON')
+    parser.add_argument('-p', '--model_prefix', type=str, required=True, help='prefix of model name')
+    args = parser.parse_args()
+
     # 训练参数设置
-    learning_rate = 1e-4
-    batch_size = 16
-    epochs = 30
+    learning_rate = 1e-5
+    batch_size = 1
+    epochs = 1000
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
+    writer = SummaryWriter(f'runs/{args.model_prefix}_{epochs}_{learning_rate}')
+
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
@@ -61,9 +74,9 @@ if __name__ == '__main__':
     )])
     
     # 加载数据集
-    train_data = CrowdCountingDataset('../../shanghaitech/part_A_train.json', transform=transform)
+    train_data = CrowdCountingDataset('../../shanghaitech/'+args.train_json, transform=transform)
     train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-    val_data = CrowdCountingDataset('../../shanghaitech/part_A_val.json', transform=transform)
+    val_data = CrowdCountingDataset('../../shanghaitech/'+args.val_json, transform=transform)
     val_dataloader = DataLoader(val_data, batch_size=1, shuffle=False)
     
     model = CSRNet().to(device)
@@ -77,7 +90,7 @@ if __name__ == '__main__':
         os.makedirs(checkpoint_path)
     
     start_epoch = 0
-    checkpoint_filename = 'checkpointA.pth'
+    checkpoint_filename = f'{args.model_prefix}_{epochs}_{learning_rate}.pth'
     checkpoint_filepath = os.path.join(checkpoint_path, checkpoint_filename)
     
     # 检查是否有checkpoint
@@ -89,8 +102,15 @@ if __name__ == '__main__':
         print(f"Checkpoint loaded from {checkpoint_filepath}, starting from epoch {start_epoch}")
     
     for epoch in range(start_epoch, epochs):
-        train_model(model, train_dataloader, criterion, optimizer, device, epoch, epochs)
-        validate_model(model, val_dataloader, criterion, device, epoch, epochs)
+        epoch_loss = train_model(model, train_dataloader, criterion, optimizer, device)
+        mae, mse = validate_model(model, val_dataloader, device)
+
+        writer.add_scalar('Loss', epoch_loss, epoch)
+        writer.add_scalar('MAE', mae, epoch)
+        writer.add_scalar('MSE', mse, epoch)
+
+        print(f"Epoch[{epoch+1}/{epochs}], Loss: {epoch_loss:.4f}")
+        print(f'MAE: {mae:.3f}, MSE: {mse:.3f}')
 
         # save checkpoint
         checkpoint = {
@@ -102,4 +122,6 @@ if __name__ == '__main__':
         torch.save(checkpoint, checkpoint_filepath)
         print(f"Checkpoint saved to {checkpoint_filepath}")    
 
+
+    writer.close()  
     print("finished training")

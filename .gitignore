@@ -1,3 +1,6 @@
 shanghaitech
 .DS_Store
 **/__pycache__/
+**/runs/
+**/logs/
+**/temp/
