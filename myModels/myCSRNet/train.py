@@ -1,10 +1,13 @@
 from model import CSRNet
+import argparse
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Adam
 from torchvision import transforms
 from dataset import CrowdCountingDataset
+import numpy as np
+from torch.utils.tensorboard import SummaryWriter
 import os
 
 def train_model(model, dataloader, criterion, optimizer, device):
