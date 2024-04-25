@@ -1,72 +1,33 @@
-from model import MCNN
 import argparse
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
-import numpy as np
-from torch.optim import Adam
-from torchvision import transforms
-from dataset import CrowdCountingDataset
 import os
 
-def train_model(model, dataloader, criterion, optimizer, device):
-    model.train()
-    running_loss = 0.0
-    for img, density in dataloader:
-        img = img.to(device)
-        density = density.to(device)
-        
-        optimizer.zero_grad()
-        
-        output = model(img)
-        loss = criterion(output, density.unsqueeze(1))
-        
-        loss.backward()
-        optimizer.step()
-        
-        running_loss += loss.item()
-    
-    epoch_loss = running_loss / len(dataloader)
-    return epoch_loss
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.optim import Adam
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from torchvision import transforms
 
-def validate_model(model, dataloader, device):
-    model.eval()
-
-    mae, mse = 0.0, 0.0
-    with torch.no_grad(): 
-        for img, density in dataloader:
-            img = img.to(device)
-            density = density.to(device)
-
-            output = model(img)
-            ground_truth_count = torch.sum(density).item()
-            predicted_count = torch.sum(output).item()
-
-            mae += abs(predicted_count - ground_truth_count)
-            mse += ((predicted_count - ground_truth_count) ** 2)
-
-    mae /= len(dataloader.dataset)
-    mse /= len(dataloader.dataset)
-    mse = np.sqrt(mse)
-    return mae, mse
-
+from dataset import CrowdCountingDataset
+from model import MCNN
+from utils import evaluate_model, train_model
 
 if __name__ == '__main__':
     # 读取命令行参数
     parser = argparse.ArgumentParser()
-    parser.add_argument('-t', '--train_json', type=str, required=True, help='path to train JSON')
-    parser.add_argument('-v', '--val_json', type=str, required=True, help='path to validation JSON')
-    parser.add_argument('-p', '--model_prefix', type=str, required=True, help='prefix of model name')
+    parser.add_argument('-train', '--train_json', type=str, required=True, help='path to train JSON')
+    parser.add_argument('-test', '--test_json', type=str, required=True, help='path ot test JSON')
+    parser.add_argument('-data', '--dataset_name', type=str, required=True, help='name of the using dataset')
     args = parser.parse_args()
 
     # 训练参数设置
     learning_rate = 1e-5
-    batch_size = 1
+    batch_size = 16
     epochs = 1000
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    writer = SummaryWriter(f'runs/{args.model_prefix}_{epochs}_{learning_rate}')
+    writer = SummaryWriter(f'runs/MCNN_{args.dataset_name}_{epochs}epoch_{learning_rate}lr_{batch_size}bs')
     
     transform = transforms.Compose([
         transforms.Resize((256, 256)),
@@ -77,10 +38,10 @@ if __name__ == '__main__':
     )])
     
     # 加载数据集
-    train_data = CrowdCountingDataset('../../shanghaitech/'+args.train_json, transform=transform)
-    train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-    val_data = CrowdCountingDataset('../../shanghaitech/'+args.val_json, transform=transform)
-    val_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=False)
+    train_data = CrowdCountingDataset('../../shanghaitech/'+ args.train_json, transform=transform)
+    train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=8)
+    test_data = CrowdCountingDataset('../../shanghaitech/'+ args.test_json, transform=transform)
+    test_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=8)
     
     model = MCNN().to(device)
     criterion = nn.MSELoss()
@@ -93,7 +54,7 @@ if __name__ == '__main__':
         os.makedirs(checkpoint_path)
     
     start_epoch = 0
-    checkpoint_filename = f'{args.model_prefix}_{epochs}_{learning_rate}.pth'         # model_name i.e. 'modelA_1000_1e-05.pth'
+    checkpoint_filename = f'MCNN_{args.dataset_name}_{epochs}epoch_{learning_rate}lr_{batch_size}bs.pth'    # model_name i.e. 'MCNN_ShanghaiTechA_1000epoch_1e-05lr_16bs.pth'
     checkpoint_filepath = os.path.join(checkpoint_path, checkpoint_filename)
     
     # 检查是否有checkpoint
@@ -105,19 +66,23 @@ if __name__ == '__main__':
         print(f"Checkpoint loaded from {checkpoint_filepath}, starting from epoch {start_epoch}")
     
     for epoch in range(start_epoch, epochs):
+
+        epoch_loss = 0.0
+        mae, mse = 0.0, 0.0
+
+        # 训练
         model.train()
-        running_loss = 0.0
-        
         epoch_loss = train_model(model, train_dataloader, criterion, optimizer, device)
-        mae, mse = validate_model(model, val_dataloader, device)
-        
         writer.add_scalar('Loss', epoch_loss, epoch)
-        writer.add_scalar('MAE', mae, epoch)
-        writer.add_scalar('MSE', mse, epoch)
-
         print(f"Epoch[{epoch+1}/{epochs}], Loss: {epoch_loss:.4f}")
-        print(f'MAE: {mae:.3f}, MSE: {mse:.3f}')
 
+        # 每隔10个epoch在测试集上评估
+        if (epoch + 1) % 10 == 0:
+            mae, mse = evaluate_model(model, test_dataloader, device)
+            writer.add_scalar('MAE', mae, epoch)
+            writer.add_scalar('MSE', mse, epoch)
+            print(f'MAE: {mae:.3f}, MSE: {mse:.3f}')
+        
         # save checkpoint
         checkpoint = {
             'epoch': epoch,
