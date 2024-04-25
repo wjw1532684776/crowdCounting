@@ -42,7 +42,7 @@ if __name__ == '__main__':
     train_data = CrowdCountingDataset('../../shanghaitech/'+ args.train_json, transform=transform)
     train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=8)
     test_data = CrowdCountingDataset('../../shanghaitech/'+ args.test_json, transform=transform)
-    test_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=8)
+    test_dataloader = DataLoader(test_data, batch_size=1, shuffle=False, num_workers=8)
     
     model = CSRNet().to(device)
     criterion = nn.MSELoss()
